@@ -5,9 +5,6 @@ ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 ENV JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8"
 
-# =========================================================
-# SYSTEM DEPENDENCIES
-# =========================================================
 RUN apt-get update && apt-get install -y \
     git \
     curl \
@@ -21,28 +18,36 @@ RUN apt-get update && apt-get install -y \
     bash \
     file \
     sed \
-    locales \
-    && locale-gen C.UTF-8 \
     && rm -rf /var/lib/apt/lists/*
 
-# =========================================================
-# CLONE H2APK
-# =========================================================
 WORKDIR /opt
 
 RUN git clone --depth=1 https://github.com/HashShin/H2APK.git
 
 WORKDIR /opt/H2APK
 
-# =========================================================
-# H2APK SETUP
-# =========================================================
-RUN chmod +x setup.sh && ./setup.sh
+# H2APK's setup downloads d8.jar, apksigner.jar and android.jar.
+RUN chmod +x setup.sh && ./setup.sh || true
 
 # =========================================================
-# MAKE SURE BUILD TOOLS ARE AVAILABLE
+# INSTALL AAPT2
 # =========================================================
-ENV PATH="/opt/H2APK/tools:${PATH}"
+RUN mkdir -p /opt/H2APK/tools && \
+    AAPT2_VERSION=$(curl -fsSL \
+    https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2/maven-metadata.xml \
+    | grep -oP '(?<=<release>)[^<]+' | head -1) && \
+    echo "Using AAPT2 version: $AAPT2_VERSION" && \
+    curl -fL \
+    "https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2/${AAPT2_VERSION}/aapt2-${AAPT2_VERSION}-linux.jar" \
+    -o /tmp/aapt2.jar && \
+    unzip -p /tmp/aapt2.jar aapt2 > /opt/H2APK/tools/aapt2 && \
+    chmod +x /opt/H2APK/tools/aapt2 && \
+    ln -sf /opt/H2APK/tools/aapt2 /usr/local/bin/aapt2 && \
+    rm -f /tmp/aapt2.jar
+
+# Make sure aapt2 is really available to H2APK.
+RUN /usr/local/bin/aapt2 version || true
+RUN command -v aapt2
 
 # =========================================================
 # CORS FIX
@@ -87,13 +92,10 @@ p.write_text(s, encoding="utf-8")
 PY
 
 # =========================================================
-# BUILD H2APK
+# BUILD
 # =========================================================
 RUN go build -o h2apk main.go
 
-# =========================================================
-# RENDER
-# =========================================================
 ENV PORT=10000
 
 EXPOSE 10000
